@@ -8,7 +8,7 @@ from PySide6.QtCore import (
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog,
     QCheckBox, QComboBox, QDateEdit, QTreeWidget, QTreeWidgetItem,
-    QProgressBar, QMessageBox, QSizePolicy,
+    QProgressBar, QMessageBox, QSizePolicy, QGroupBox, QPlainTextEdit,
 )
 
 import config
@@ -24,16 +24,18 @@ class _AnalyseWorker(QThread):
     done = Signal(dict)
     error = Signal(str)
 
-    def __init__(self, files: list[dict], peek_mode: bool):
+    def __init__(self, files: list[dict], peek_mode: bool, user_context: str = ""):
         super().__init__()
         self.files = files
         self.peek_mode = peek_mode
+        self.user_context = user_context
 
     def run(self) -> None:
         try:
             result = categorize(
                 self.files,
                 peek_mode=self.peek_mode,
+                user_context=self.user_context,
                 on_batch_complete=lambda i, n: self.progress.emit(i + 1, n),
             )
             self.done.emit(result)
@@ -107,6 +109,24 @@ class OrganizerTab(QWidget):
         peek_row.addWidget(self._peek_cb)
         layout.addLayout(peek_row)
 
+        # Context hint box (collapsible)
+        self._context_box = QGroupBox("Context (optional)")
+        self._context_box.setCheckable(True)
+        self._context_box.setChecked(False)
+        context_layout = QVBoxLayout(self._context_box)
+        self._context_edit = QPlainTextEdit()
+        self._context_edit.setPlaceholderText(
+            "e.g. 2020–2024 I was a university student studying engineering. "
+            "I also do freelance graphic design."
+        )
+        self._context_edit.setFixedHeight(72)
+        self._context_edit.textChanged.connect(self._on_context_changed)
+        self._context_counter = QLabel(f"0 / {config.MAX_CONTEXT_CHARS}")
+        self._context_counter.setStyleSheet("color: #888; font-size: 11px;")
+        context_layout.addWidget(self._context_edit)
+        context_layout.addWidget(self._context_counter)
+        layout.addWidget(self._context_box)
+
         # Date filter row
         date_row = QHBoxLayout()
         date_row.addWidget(QLabel("Date filter:"))
@@ -168,6 +188,18 @@ class OrganizerTab(QWidget):
 
         self._src_path: str | None = None
         self._dst_path: str | None = None
+
+    def _on_context_changed(self) -> None:
+        text = self._context_edit.toPlainText()
+        limit = config.MAX_CONTEXT_CHARS
+        if len(text) > limit:
+            cursor = self._context_edit.textCursor()
+            self._context_edit.setPlainText(text[:limit])
+            self._context_edit.setTextCursor(cursor)
+        count = min(len(text), limit)
+        self._context_counter.setText(f"{count} / {limit}")
+        color = "#cc4444" if count >= limit else "#888"
+        self._context_counter.setStyleSheet(f"color: {color}; font-size: 11px;")
 
     def _pick_src(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Select Source Folder")
@@ -237,7 +269,11 @@ class OrganizerTab(QWidget):
         self._progress.setVisible(True)
         self._progress.setRange(0, 0)
 
-        self._worker = _AnalyseWorker(filtered, peek)
+        user_context = ""
+        if self._context_box.isChecked():
+            user_context = self._context_edit.toPlainText().strip()[:config.MAX_CONTEXT_CHARS]
+
+        self._worker = _AnalyseWorker(filtered, peek, user_context)
         self._worker.progress.connect(self._on_analyse_progress)
         self._worker.done.connect(self._on_analyse_done)
         self._worker.error.connect(self._on_analyse_error)
