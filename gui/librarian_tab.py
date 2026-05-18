@@ -1,9 +1,11 @@
 import os
 
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog,
     QLineEdit, QListWidget, QListWidgetItem, QProgressBar, QMessageBox,
+    QFrame, QGraphicsDropShadowEffect,
 )
 
 import config
@@ -92,42 +94,107 @@ class LibrarianTab(QWidget):
         self._watchdog_thread: _WatchdogThread | None = None
         self._build_ui()
 
-    def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+    # ------------------------------------------------------------------
+    # Card factory — white rounded panel with a soft drop shadow.
+    # ------------------------------------------------------------------
+    def _make_card(self) -> tuple["QFrame", "QVBoxLayout"]:
+        card = QFrame()
+        card.setObjectName("card")
+        card.setStyleSheet("""
+            QFrame#card {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
+        """)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(12)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(0, 0, 0, 18))
+        card.setGraphicsEffect(shadow)
+        vbox = QVBoxLayout(card)
+        vbox.setContentsMargins(14, 12, 14, 12)
+        vbox.setSpacing(8)
+        return card, vbox
 
-        # Folder picker
+    def _build_ui(self) -> None:
+        PATH_LABEL_STYLE = """
+            QLabel {
+                background: #F3F4F6;
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #374151;
+                font-size: 13px;
+            }
+        """
+        SEARCH_BTN_STYLE = """
+            QPushButton {
+                background-color: #2563EB;
+                color: #FFFFFF;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+                padding: 6px 18px;
+                min-height: 30px;
+            }
+            QPushButton:hover    { background-color: #1D4ED8; }
+            QPushButton:pressed  { background-color: #1E40AF; }
+            QPushButton:disabled { background-color: #93C5FD; color: #FFFFFF; }
+        """
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        # ── Card 1: Folder picker ──────────────────────────────────
+        folder_card, folder_vbox = self._make_card()
+
         folder_row = QHBoxLayout()
+        folder_hdr = QLabel("Folder")
+        folder_hdr.setStyleSheet("font-weight: 600; color: #374151; min-width: 52px;")
         self._folder_label = QLabel("No folder indexed")
+        self._folder_label.setStyleSheet(PATH_LABEL_STYLE)
         pick_btn = QPushButton("Choose Folder…")
         pick_btn.clicked.connect(self._pick_folder)
-        folder_row.addWidget(QLabel("Folder:"))
+        folder_row.addWidget(folder_hdr)
         folder_row.addWidget(self._folder_label, 1)
         folder_row.addWidget(pick_btn)
-        layout.addLayout(folder_row)
+        folder_vbox.addLayout(folder_row)
 
-        # Status / progress
+        layout.addWidget(folder_card)
+
+        # Status / progress (outside card — collapses when empty)
         self._status_label = QLabel("")
+        self._status_label.setStyleSheet("font-size: 12px; color: #6B7280; padding-left: 2px;")
         layout.addWidget(self._status_label)
         self._progress = QProgressBar()
         self._progress.setVisible(False)
+        self._progress.setFixedHeight(8)
         layout.addWidget(self._progress)
 
-        # Search bar
+        # ── Card 2: Search bar ─────────────────────────────────────
+        search_card, search_vbox = self._make_card()
+
         search_row = QHBoxLayout()
         self._search_bar = QLineEdit()
         self._search_bar.setPlaceholderText("Describe what you're looking for…")
         self._search_bar.returnPressed.connect(self._run_search)
         search_btn = QPushButton("Search")
         search_btn.clicked.connect(self._run_search)
+        search_btn.setStyleSheet(SEARCH_BTN_STYLE)
         search_row.addWidget(self._search_bar, 1)
         search_row.addWidget(search_btn)
-        layout.addLayout(search_row)
+        search_vbox.addLayout(search_row)
 
-        # Results
+        layout.addWidget(search_card)
+
+        # ── Results list ───────────────────────────────────────────
         self._results = QListWidget()
         self._results.itemDoubleClicked.connect(self._open_result)
         self._results.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._results.customContextMenuRequested.connect(self._results_context)
+        self._results.setAlternatingRowColors(True)
         layout.addWidget(self._results)
 
     def _pick_folder(self) -> None:

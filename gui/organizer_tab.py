@@ -5,10 +5,12 @@ from datetime import datetime
 from PySide6.QtCore import (
     Qt, QThread, Signal, QDate, QDateTime,
 )
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog,
     QCheckBox, QComboBox, QDateEdit, QTreeWidget, QTreeWidgetItem,
     QProgressBar, QMessageBox, QSizePolicy, QGroupBox, QPlainTextEdit,
+    QFrame, QGraphicsDropShadowEffect,
 )
 
 import config
@@ -80,36 +82,112 @@ class OrganizerTab(QWidget):
 
         self._build_ui()
 
-    def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
+    # ------------------------------------------------------------------
+    # Card factory — white rounded panel with a soft drop shadow.
+    # ------------------------------------------------------------------
+    def _make_card(self) -> tuple["QFrame", "QVBoxLayout"]:
+        card = QFrame()
+        card.setObjectName("card")
+        card.setStyleSheet("""
+            QFrame#card {
+                background: #FFFFFF;
+                border: 1px solid #E5E7EB;
+                border-radius: 8px;
+            }
+        """)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(12)
+        shadow.setOffset(0, 2)
+        shadow.setColor(QColor(0, 0, 0, 18))
+        card.setGraphicsEffect(shadow)
+        vbox = QVBoxLayout(card)
+        vbox.setContentsMargins(14, 12, 14, 12)
+        vbox.setSpacing(8)
+        return card, vbox
 
-        # Source row
+    def _build_ui(self) -> None:
+        # Shared style for read-only path labels (looks like a disabled input)
+        PATH_LABEL_STYLE = """
+            QLabel {
+                background: #F3F4F6;
+                border: 1px solid #E5E7EB;
+                border-radius: 6px;
+                padding: 4px 8px;
+                color: #374151;
+                font-size: 13px;
+            }
+        """
+        # Accent-blue primary button
+        PRIMARY_BTN_STYLE = """
+            QPushButton {
+                background-color: #2563EB;
+                color: #FFFFFF;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+                padding: 7px 18px;
+                min-height: 32px;
+            }
+            QPushButton:hover    { background-color: #1D4ED8; }
+            QPushButton:pressed  { background-color: #1E40AF; }
+            QPushButton:disabled { background-color: #93C5FD; color: #FFFFFF; }
+        """
+        # Green success button
+        SUCCESS_BTN_STYLE = """
+            QPushButton {
+                background-color: #16A34A;
+                color: #FFFFFF;
+                font-weight: 600;
+                border: none;
+                border-radius: 6px;
+                padding: 7px 18px;
+                min-height: 32px;
+            }
+            QPushButton:hover    { background-color: #15803D; }
+            QPushButton:pressed  { background-color: #166534; }
+            QPushButton:disabled { background-color: #86EFAC; color: #FFFFFF; }
+        """
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
+
+        # ── Card 1: Folder pickers ─────────────────────────────────
+        folders_card, folders_vbox = self._make_card()
+
         src_row = QHBoxLayout()
+        src_hdr = QLabel("Source")
+        src_hdr.setStyleSheet("font-weight: 600; color: #374151; min-width: 52px;")
         self._src_label = QLabel("No folder selected")
-        src_btn = QPushButton("Choose Source Folder…")
+        self._src_label.setStyleSheet(PATH_LABEL_STYLE)
+        src_btn = QPushButton("Choose…")
         src_btn.clicked.connect(self._pick_src)
-        src_row.addWidget(QLabel("Source:"))
+        src_row.addWidget(src_hdr)
         src_row.addWidget(self._src_label, 1)
         src_row.addWidget(src_btn)
-        layout.addLayout(src_row)
+        folders_vbox.addLayout(src_row)
 
-        # Dest row (same folder by default)
         dst_row = QHBoxLayout()
+        dst_hdr = QLabel("Dest")
+        dst_hdr.setStyleSheet("font-weight: 600; color: #374151; min-width: 52px;")
         self._dst_label = QLabel("Same as source")
-        dst_btn = QPushButton("Choose Destination…")
+        self._dst_label.setStyleSheet(PATH_LABEL_STYLE)
+        dst_btn = QPushButton("Choose…")
         dst_btn.clicked.connect(self._pick_dst)
-        dst_row.addWidget(QLabel("Dest:"))
+        dst_row.addWidget(dst_hdr)
         dst_row.addWidget(self._dst_label, 1)
         dst_row.addWidget(dst_btn)
-        layout.addLayout(dst_row)
+        folders_vbox.addLayout(dst_row)
 
-        # Peek mode
-        peek_row = QHBoxLayout()
+        layout.addWidget(folders_card)
+
+        # ── Card 2: Options (peek · context · date filter) ─────────
+        options_card, options_vbox = self._make_card()
+
         self._peek_cb = QCheckBox("Peek inside files (reads content, opt-in, may increase cost)")
-        peek_row.addWidget(self._peek_cb)
-        layout.addLayout(peek_row)
+        options_vbox.addWidget(self._peek_cb)
 
-        # Context hint box (collapsible)
+        # Collapsible context hint
         self._context_box = QGroupBox("Context (optional)")
         self._context_box.setCheckable(True)
         self._context_box.setChecked(False)
@@ -122,14 +200,16 @@ class OrganizerTab(QWidget):
         self._context_edit.setFixedHeight(72)
         self._context_edit.textChanged.connect(self._on_context_changed)
         self._context_counter = QLabel(f"0 / {config.MAX_CONTEXT_CHARS}")
-        self._context_counter.setStyleSheet("color: #888; font-size: 11px;")
+        self._context_counter.setStyleSheet("color: #9CA3AF; font-size: 11px;")
         context_layout.addWidget(self._context_edit)
         context_layout.addWidget(self._context_counter)
-        layout.addWidget(self._context_box)
+        options_vbox.addWidget(self._context_box)
 
         # Date filter row
         date_row = QHBoxLayout()
-        date_row.addWidget(QLabel("Date filter:"))
+        date_hdr = QLabel("Date filter:")
+        date_hdr.setStyleSheet("font-weight: 600; color: #374151;")
+        date_row.addWidget(date_hdr)
         self._date_type = QComboBox()
         self._date_type.addItems(["Modified", "Created"])
         date_row.addWidget(self._date_type)
@@ -154,36 +234,53 @@ class OrganizerTab(QWidget):
         clear_btn.clicked.connect(self._clear_date_filter)
         date_row.addWidget(clear_btn)
         date_row.addStretch()
-        layout.addLayout(date_row)
+        options_vbox.addLayout(date_row)
 
-        # File count label
+        layout.addWidget(options_card)
+
+        # ── Card 3: Action buttons ─────────────────────────────────
+        actions_card, actions_vbox = self._make_card()
+
         self._count_label = QLabel("")
-        layout.addWidget(self._count_label)
+        self._count_label.setStyleSheet("font-size: 12px; color: #6B7280;")
+        actions_vbox.addWidget(self._count_label)
 
-        # Action buttons
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
         self._analyse_btn = QPushButton("Analyse & Preview")
         self._analyse_btn.clicked.connect(self._start_analyse)
+        self._analyse_btn.setStyleSheet(PRIMARY_BTN_STYLE)
+
         self._confirm_btn = QPushButton("Confirm & Move")
         self._confirm_btn.setEnabled(False)
         self._confirm_btn.clicked.connect(self._start_move)
+        self._confirm_btn.setStyleSheet(SUCCESS_BTN_STYLE)
+
         self._undo_btn = QPushButton("Undo Last")
         self._undo_btn.clicked.connect(self._undo)
+        # ghost style — inherits from global QPushButton rules
+
         btn_row.addWidget(self._analyse_btn)
         btn_row.addWidget(self._confirm_btn)
+        btn_row.addStretch()
         btn_row.addWidget(self._undo_btn)
-        layout.addLayout(btn_row)
+        actions_vbox.addLayout(btn_row)
 
-        # Progress bar
+        layout.addWidget(actions_card)
+
+        # ── Progress bar (accent blue, slim) ───────────────────────
         self._progress = QProgressBar()
         self._progress.setVisible(False)
+        self._progress.setFixedHeight(8)
         layout.addWidget(self._progress)
 
-        # Tree preview
+        # ── Tree preview ───────────────────────────────────────────
         self._tree = QTreeWidget()
         self._tree.setHeaderLabel("Proposed folder structure")
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._tree.customContextMenuRequested.connect(self._tree_context)
+        self._tree.setAlternatingRowColors(True)
         layout.addWidget(self._tree)
 
         self._src_path: str | None = None
@@ -297,11 +394,22 @@ class OrganizerTab(QWidget):
 
     def _render_preview(self, assignments: dict) -> None:
         self._tree.clear()
+        # System icons via QFileIconProvider (no extra dependencies)
+        try:
+            from PySide6.QtWidgets import QFileIconProvider
+        except ImportError:
+            from PySide6.QtGui import QFileIconProvider  # Qt 6.4+ location
+        _ip = QFileIconProvider()
+        folder_icon = _ip.icon(QFileIconProvider.IconType.Folder)
+        file_icon   = _ip.icon(QFileIconProvider.IconType.File)
+
         tree = build_tree(assignments)
         for folder in sorted(tree):
             folder_item = QTreeWidgetItem([folder])
+            folder_item.setIcon(0, folder_icon)
             for name in sorted(tree[folder]):
                 child = QTreeWidgetItem([name])
+                child.setIcon(0, file_icon)
                 child.setToolTip(0, f"Will be moved to: {folder}/{name}")
                 folder_item.addChild(child)
             self._tree.addTopLevelItem(folder_item)
