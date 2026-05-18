@@ -19,6 +19,11 @@ BATCH_SIZE = 200
 MAX_PEEK_CHARS = 500
 MAX_CONTEXT_CHARS = 500
 
+# Haiku 4.5 pricing (USD per 1M tokens)
+HAIKU_INPUT_PRICE_PER_M  = 0.80
+HAIKU_OUTPUT_PRICE_PER_M = 4.00
+DEFAULT_COST_THRESHOLD   = 1.00  # warn before exceeding this per run
+
 os.makedirs(BATCH_CACHE_DIR, exist_ok=True)
 
 
@@ -33,3 +38,17 @@ def get_api_key() -> str | None:
 def set_api_key(key: str) -> None:
     import keyring
     keyring.set_password("FileOrganizer", "anthropic_api_key", key)
+
+
+def get_cost_threshold() -> float:
+    try:
+        import keyring
+        v = keyring.get_password("FileOrganizer", "cost_threshold")
+        return float(v) if v else DEFAULT_COST_THRESHOLD
+    except Exception:
+        return DEFAULT_COST_THRESHOLD
+
+
+def set_cost_threshold(value: float) -> None:
+    import keyring
+    keyring.set_password("FileOrganizer", "cost_threshold", str(value))

@@ -16,14 +16,14 @@ from PySide6.QtWidgets import (
 import config
 from organizer.scanner import scan_directory
 from organizer.date_filter import apply_date_filter
-from organizer.categorizer import categorize
+from organizer.categorizer import categorize, estimate_cost
 from organizer.mover import get_db, move_files, undo_last, recover_pending
 from organizer.tree_renderer import build_tree, open_in_finder
 
 
 class _AnalyseWorker(QThread):
     progress = Signal(int, int)
-    done = Signal(dict)
+    done = Signal(dict, object)  # (assignments, CostInfo)
     error = Signal(str)
 
     def __init__(self, files: list[dict], peek_mode: bool, user_context: str = ""):
@@ -34,13 +34,13 @@ class _AnalyseWorker(QThread):
 
     def run(self) -> None:
         try:
-            result = categorize(
+            assignments, cost_info = categorize(
                 self.files,
                 peek_mode=self.peek_mode,
                 user_context=self.user_context,
                 on_batch_complete=lambda i, n: self.progress.emit(i + 1, n),
             )
-            self.done.emit(result)
+            self.done.emit(assignments, cost_info)
         except Exception as e:
             self.error.emit(str(e))
 
@@ -339,17 +339,16 @@ class OrganizerTab(QWidget):
         filtered = apply_date_filter(self._scanned, date_type, from_ts, to_ts)
 
         excluded = len(self._scanned) - len(filtered)
-        if excluded:
-            self._count_label.setText(f"Found {len(filtered)} files ({excluded} excluded by date filter)")
-        else:
-            self._count_label.setText(f"Found {len(filtered)} files")
+        peek = self._peek_cb.isChecked()
+        est = estimate_cost(filtered, peek)
+        base = f"Found {len(filtered)} files" + (f" ({excluded} excluded by date filter)" if excluded else "")
+        self._count_label.setText(f"{base} — est. cost ~${est:.3f}")
 
         if not filtered:
             QMessageBox.information(self, "No Files", "No files match the date filter.")
             return
 
         # Large folder + peek mode warning
-        peek = self._peek_cb.isChecked()
         if peek and len(filtered) > config.PEEK_FOLDER_CEILING:
             resp = QMessageBox.question(
                 self, "Large Folder",
@@ -360,6 +359,20 @@ class OrganizerTab(QWidget):
             if resp == QMessageBox.StandardButton.Yes:
                 peek = False
                 self._peek_cb.setChecked(False)
+                est = estimate_cost(filtered, False)
+                self._count_label.setText(self._count_label.text().split(" — ")[0] + f" — est. cost ~${est:.3f}")
+
+        # Cost threshold warning
+        threshold = config.get_cost_threshold()
+        if est > threshold:
+            resp = QMessageBox.question(
+                self, "Cost Warning",
+                f"Estimated cost ~${est:.3f} exceeds your warning threshold of ${threshold:.2f}.\n"
+                "Proceed anyway?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            )
+            if resp != QMessageBox.StandardButton.Yes:
+                return
 
         self._analyse_btn.setEnabled(False)
         self._confirm_btn.setEnabled(False)
@@ -380,11 +393,16 @@ class OrganizerTab(QWidget):
         self._progress.setRange(0, total)
         self._progress.setValue(done)
 
-    def _on_analyse_done(self, assignments: dict) -> None:
+    def _on_analyse_done(self, assignments: dict, cost_info) -> None:
         self._assignments = assignments
         self._progress.setVisible(False)
         self._analyse_btn.setEnabled(True)
         self._confirm_btn.setEnabled(True)
+        total_tokens = cost_info.input_tokens + cost_info.output_tokens
+        self._count_label.setText(
+            self._count_label.text().split(" — ")[0]
+            + f" — actual cost ${cost_info.cost_usd:.4f} ({total_tokens:,} tokens)"
+        )
         self._render_preview(assignments)
 
     def _on_analyse_error(self, msg: str) -> None:

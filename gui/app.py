@@ -2,8 +2,10 @@ import sys
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QMessageBox, QInputDialog,
-    QLineEdit,
+    QLineEdit, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QDoubleSpinBox, QFormLayout, QWidget, QSizePolicy,
 )
+from PySide6.QtCore import Qt
 
 import config
 from gui.organizer_tab import OrganizerTab
@@ -129,7 +131,7 @@ QProgressBar {
     border-radius: 4px;
     background-color: #E5E7EB;
     max-height: 8px;
-    font-size: 0px;
+    color: transparent;
 }
 QProgressBar::chunk {
     background-color: #2563EB;
@@ -248,10 +250,82 @@ QMessageBox, QInputDialog { background-color: #FFFFFF; }
 """
 
 
+class _Spacer(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.setMinimumWidth(420)
+        self.setModal(True)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(16)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+        form.setSpacing(10)
+
+        # API key field
+        self._key_edit = QLineEdit()
+        self._key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        current_key = config.get_api_key() or ""
+        self._key_edit.setPlaceholderText("sk-ant-…")
+        if current_key:
+            self._key_edit.setText(current_key)
+        form.addRow("Anthropic API Key:", self._key_edit)
+
+        # Cost threshold field
+        self._threshold_spin = QDoubleSpinBox()
+        self._threshold_spin.setRange(0.10, 99.99)
+        self._threshold_spin.setSingleStep(0.10)
+        self._threshold_spin.setDecimals(2)
+        self._threshold_spin.setPrefix("$")
+        self._threshold_spin.setValue(config.get_cost_threshold())
+        self._threshold_spin.setToolTip("Warn before starting a run that exceeds this estimated cost.")
+        form.addRow("Cost warning threshold:", self._threshold_spin)
+
+        layout.addLayout(form)
+
+        hint = QLabel("A warning dialog will appear if the estimated cost exceeds the threshold.")
+        hint.setStyleSheet("color: #6B7280; font-size: 12px;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.clicked.connect(self.reject)
+        save_btn = QPushButton("Save")
+        save_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2563EB; color: #FFFFFF; font-weight: 600;
+                border: none; border-radius: 6px; padding: 7px 18px; min-height: 32px;
+            }
+            QPushButton:hover { background-color: #1D4ED8; }
+        """)
+        save_btn.clicked.connect(self._save)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        layout.addLayout(btn_row)
+
+    def _save(self) -> None:
+        key = self._key_edit.text().strip()
+        if key:
+            config.set_api_key(key)
+        config.set_cost_threshold(self._threshold_spin.value())
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        # Apply global light theme to the entire application
         QApplication.instance().setStyleSheet(GLOBAL_STYLE)
         self.setWindowTitle("File Organizer + Librarian")
         self.resize(900, 650)
@@ -262,6 +336,25 @@ class MainWindow(QMainWindow):
         tabs.addTab(OrganizerTab(), "Organizer")
         tabs.addTab(LibrarianTab(), "Librarian")
         self.setCentralWidget(tabs)
+
+        # Settings button in toolbar
+        toolbar = self.addToolBar("Main")
+        toolbar.setMovable(False)
+        toolbar.setStyleSheet("QToolBar { border: none; background: transparent; }")
+        toolbar.addWidget(_Spacer())
+        settings_btn = QPushButton("⚙ Settings")
+        settings_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent; border: none;
+                color: #6B7280; font-size: 13px; padding: 4px 10px;
+            }
+            QPushButton:hover { color: #2563EB; }
+        """)
+        settings_btn.clicked.connect(self._open_settings)
+        toolbar.addWidget(settings_btn)
+
+    def _open_settings(self) -> None:
+        SettingsDialog(self).exec()
 
     def _ensure_api_key(self) -> None:
         if config.get_api_key():

@@ -1,12 +1,45 @@
 import json
 import os
 import time
+from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 
 import anthropic
 
 import config
 from organizer.content_extractor import extract_text_escaped
+
+
+@dataclass
+class CostInfo:
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    @property
+    def cost_usd(self) -> float:
+        return (
+            self.input_tokens  / 1_000_000 * config.HAIKU_INPUT_PRICE_PER_M
+            + self.output_tokens / 1_000_000 * config.HAIKU_OUTPUT_PRICE_PER_M
+        )
+
+    def __add__(self, other: "CostInfo") -> "CostInfo":
+        return CostInfo(
+            self.input_tokens  + other.input_tokens,
+            self.output_tokens + other.output_tokens,
+        )
+
+
+def estimate_cost(files: list[dict], peek_mode: bool) -> float:
+    n = len(files)
+    if peek_mode:
+        input_tokens = n * 200
+    else:
+        input_tokens = n * 15
+    output_tokens = n * 8
+    return (
+        input_tokens  / 1_000_000 * config.HAIKU_INPUT_PRICE_PER_M
+        + output_tokens / 1_000_000 * config.HAIKU_OUTPUT_PRICE_PER_M
+    )
 
 _EXT_SEEDS = {
     frozenset({".py", ".js", ".ts", ".cs", ".cpp", ".c", ".rs", ".go", ".java", ".rb", ".swift", ".kt"}): "Source Code",
@@ -91,13 +124,14 @@ def categorize(
     peek_mode: bool = False,
     user_context: str = "",
     on_batch_complete=None,
-) -> dict[str, str]:
+) -> tuple[dict[str, str], CostInfo]:
     api_key = config.get_api_key()
     client = anthropic.Anthropic(api_key=api_key)
 
     established_folders = seed_from_extensions(files)
     batches = _make_batches(files, config.BATCH_SIZE)
     raw_assignments: dict[str, str] = {}
+    total_cost = CostInfo()
 
     for i, batch in enumerate(batches):
         cached = _load_cache(i)
@@ -109,11 +143,12 @@ def categorize(
 
         system = _build_system(established_folders, user_context)
         user_msg = _build_user_prompt(batch, peek_mode)
-        result = _call_with_retry(client, system, user_msg)
+        result, usage = _call_with_retry(client, system, user_msg)
 
         batch_result = {item["filename"]: item["folder_path"] for item in result}
         _save_cache(i, batch_result)
         raw_assignments.update(batch_result)
+        total_cost = total_cost + usage
 
         for folder in batch_result.values():
             established_folders.add(folder)
@@ -122,7 +157,7 @@ def categorize(
             on_batch_complete(i, len(batches))
 
     clear_cache()
-    return consolidate_folders(raw_assignments, established_folders)
+    return consolidate_folders(raw_assignments, established_folders), total_cost
 
 
 def consolidate_folders(
@@ -172,7 +207,9 @@ def _build_user_prompt(batch: list[dict], peek_mode: bool) -> str:
     return "\n".join(lines)
 
 
-def _call_with_retry(client: anthropic.Anthropic, system: str, user_msg: str, attempts: int = 3) -> list[dict]:
+def _call_with_retry(
+    client: anthropic.Anthropic, system: str, user_msg: str, attempts: int = 3
+) -> tuple[list[dict], CostInfo]:
     delays = [2, 4, 8]
     last_err = None
     for i in range(attempts):
@@ -185,9 +222,13 @@ def _call_with_retry(client: anthropic.Anthropic, system: str, user_msg: str, at
                 tool_choice={"type": "tool", "name": "categorize_files"},
                 messages=[{"role": "user", "content": user_msg}],
             )
+            usage = CostInfo(
+                input_tokens=response.usage.input_tokens,
+                output_tokens=response.usage.output_tokens,
+            )
             for block in response.content:
                 if block.type == "tool_use" and block.name == "categorize_files":
-                    return block.input["categorizations"]
+                    return block.input["categorizations"], usage
             raise ValueError("No tool_use block in response")
         except Exception as e:
             last_err = e
