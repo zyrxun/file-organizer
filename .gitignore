@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+.eggs/
+setup.py
+models/
+*.dmg
+*.app
+*.db
+*.db-wal
+*.db-shm
