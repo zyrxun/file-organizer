@@ -13,12 +13,27 @@ from PySide6.QtWidgets import (
     QFrame, QGraphicsDropShadowEffect,
 )
 
+import subprocess
+import sys
+
 import config
 from organizer.scanner import scan_directory
 from organizer.date_filter import apply_date_filter
 from organizer.categorizer import categorize, estimate_cost
 from organizer.mover import get_db, move_files, undo_last, recover_pending
 from organizer.tree_renderer import build_tree, open_in_finder
+
+
+def _notify(title: str, body: str) -> None:
+    if sys.platform == "darwin":
+        try:
+            script = (
+                f'display notification "{body}" with title "{title}" '
+                f'sound name "default"'
+            )
+            subprocess.run(["osascript", "-e", script], check=False, timeout=3)
+        except Exception:
+            pass
 
 
 class _AnalyseWorker(QThread):
@@ -275,6 +290,14 @@ class OrganizerTab(QWidget):
         self._progress.setFixedHeight(8)
         layout.addWidget(self._progress)
 
+        # ── Status label (shown during analysis) ───────────────────
+        self._status_label = QLabel("")
+        self._status_label.setVisible(False)
+        self._status_label.setStyleSheet(
+            "color: #2563EB; font-size: 13px; padding: 2px 0;"
+        )
+        layout.addWidget(self._status_label)
+
         # ── Tree preview ───────────────────────────────────────────
         self._tree = QTreeWidget()
         self._tree.setHeaderLabel("Proposed folder structure")
@@ -375,9 +398,14 @@ class OrganizerTab(QWidget):
                 return
 
         self._analyse_btn.setEnabled(False)
+        self._analyse_btn.setText("Analysing…")
         self._confirm_btn.setEnabled(False)
+        self._progress.setFixedHeight(16)
         self._progress.setVisible(True)
         self._progress.setRange(0, 0)
+        self._status_label.setText("Contacting Claude API…")
+        self._status_label.setVisible(True)
+        _notify("Analysis started", f"Organising {len(filtered)} files with Claude…")
 
         user_context = ""
         if self._context_box.isChecked():
@@ -392,12 +420,18 @@ class OrganizerTab(QWidget):
     def _on_analyse_progress(self, done: int, total: int) -> None:
         self._progress.setRange(0, total)
         self._progress.setValue(done)
+        self._analyse_btn.setText(f"Analysing… ({done} of {total} batches)")
+        self._status_label.setText(f"Processing batch {done} of {total}…")
 
     def _on_analyse_done(self, assignments: dict, cost_info) -> None:
         self._assignments = assignments
         self._progress.setVisible(False)
+        self._progress.setFixedHeight(8)
         self._analyse_btn.setEnabled(True)
+        self._analyse_btn.setText("Analyse & Preview")
         self._confirm_btn.setEnabled(True)
+        self._status_label.setVisible(False)
+        _notify("Analysis complete", f"Found {len(assignments)} files to organise.")
         total_tokens = cost_info.input_tokens + cost_info.output_tokens
         self._count_label.setText(
             self._count_label.text().split(" — ")[0]
@@ -407,7 +441,10 @@ class OrganizerTab(QWidget):
 
     def _on_analyse_error(self, msg: str) -> None:
         self._progress.setVisible(False)
+        self._progress.setFixedHeight(8)
         self._analyse_btn.setEnabled(True)
+        self._analyse_btn.setText("Analyse & Preview")
+        self._status_label.setVisible(False)
         QMessageBox.critical(self, "Analysis Failed", msg)
 
     def _render_preview(self, assignments: dict) -> None:
@@ -465,8 +502,10 @@ class OrganizerTab(QWidget):
         self._confirm_btn.setEnabled(True)
         if errors:
             QMessageBox.warning(self, "Move Errors", "\n".join(errors[:10]))
+            _notify("Move finished with errors", f"{len(errors)} file(s) could not be moved.")
         else:
             QMessageBox.information(self, "Done", "All files moved successfully.")
+            _notify("Move complete", "All files have been organised successfully.")
         self._assignments = {}
 
     def _undo(self) -> None:
