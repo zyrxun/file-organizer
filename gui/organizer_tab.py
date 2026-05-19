@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 
 from PySide6.QtCore import (
-    Qt, QThread, Signal, QDate, QDateTime,
+    Qt, QThread, Signal, QDate, QDateTime, QTime,
 )
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
@@ -352,11 +352,11 @@ class OrganizerTab(QWidget):
 
         date_type = self._date_type.currentText().lower()
         from_ts = (
-            QDateTime(self._from_date.date()).toSecsSinceEpoch()
+            QDateTime(self._from_date.date(), QTime(0, 0)).toSecsSinceEpoch()
             if self._from_enabled.isChecked() else None
         )
         to_ts = (
-            QDateTime(self._to_date.date()).toSecsSinceEpoch()
+            QDateTime(self._to_date.date(), QTime(23, 59, 59)).toSecsSinceEpoch()
             if self._to_enabled.isChecked() else None
         )
         filtered = apply_date_filter(self._scanned, date_type, from_ts, to_ts)
