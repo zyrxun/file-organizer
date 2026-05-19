@@ -227,9 +227,9 @@ def _build_user_prompt(batch: list[dict], peek_mode: bool) -> str:
 
 
 def _call_with_retry(
-    client: anthropic.Anthropic, system: str, user_msg: str, attempts: int = 3
+    client: anthropic.Anthropic, system: str, user_msg: str, attempts: int = 5
 ) -> tuple[list[dict], CostInfo]:
-    delays = [2, 4, 8]
+    delays = [5, 15, 30, 60, 60]
     last_err = None
     for i in range(attempts):
         try:
@@ -253,6 +253,8 @@ def _call_with_retry(
             last_err = e
             if i < attempts - 1:
                 time.sleep(delays[i])
+    if "overloaded" in str(last_err).lower():
+        raise RuntimeError("Anthropic API is temporarily overloaded. Please wait a minute and try again.") from last_err
     raise RuntimeError(f"All {attempts} attempts failed: {last_err}") from last_err
 
 
