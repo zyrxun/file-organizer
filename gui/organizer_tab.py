@@ -459,15 +459,26 @@ class OrganizerTab(QWidget):
         file_icon   = _ip.icon(QFileIconProvider.IconType.File)
 
         tree = build_tree(assignments)
-        for folder in sorted(tree):
-            folder_item = QTreeWidgetItem([folder])
-            folder_item.setIcon(0, folder_icon)
-            for name in sorted(tree[folder]):
-                child = QTreeWidgetItem([name])
-                child.setIcon(0, file_icon)
-                child.setToolTip(0, f"Will be moved to: {folder}/{name}")
-                folder_item.addChild(child)
-            self._tree.addTopLevelItem(folder_item)
+        for top in sorted(tree):
+            top_item = QTreeWidgetItem([top])
+            top_item.setIcon(0, folder_icon)
+            for sub, files in sorted(tree[top].items()):
+                if sub:
+                    sub_item = QTreeWidgetItem([sub])
+                    sub_item.setIcon(0, folder_icon)
+                    for name in sorted(files):
+                        child = QTreeWidgetItem([name])
+                        child.setIcon(0, file_icon)
+                        child.setToolTip(0, f"Will be moved to: {top}/{sub}/{name}")
+                        sub_item.addChild(child)
+                    top_item.addChild(sub_item)
+                else:
+                    for name in sorted(files):
+                        child = QTreeWidgetItem([name])
+                        child.setIcon(0, file_icon)
+                        child.setToolTip(0, f"Will be moved to: {top}/{name}")
+                        top_item.addChild(child)
+            self._tree.addTopLevelItem(top_item)
         self._tree.expandAll()
 
     def _start_move(self) -> None:
@@ -517,7 +528,10 @@ class OrganizerTab(QWidget):
 
     def _tree_context(self, pos) -> None:
         item = self._tree.itemAt(pos)
-        if item and item.parent() is None:
+        if item and item.parent() is not None and item.parent().parent() is None:
+            # sub-folder node or top-level folder node
+            pass
+        if item and item.childCount() > 0:
             from PySide6.QtWidgets import QMenu
             menu = QMenu(self)
             open_act = menu.addAction("Open in Finder")
@@ -525,4 +539,10 @@ class OrganizerTab(QWidget):
             if action == open_act:
                 dst = self._dst_path or self._src_path
                 if dst:
-                    open_in_finder(os.path.join(dst, item.text(0)))
+                    # Build path from top → sub
+                    parts = [item.text(0)]
+                    parent = item.parent()
+                    while parent:
+                        parts.insert(0, parent.text(0))
+                        parent = parent.parent()
+                    open_in_finder(os.path.join(dst, *parts))
