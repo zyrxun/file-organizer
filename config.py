@@ -15,7 +15,7 @@ LIBRARIAN_DB_PATH  = os.path.join(APP_DATA_DIR, "librarian.db")
 BATCH_CACHE_DIR    = os.path.join(APP_DATA_DIR, "batch_cache")
 LARGE_FILE_CEILING = 50 * 1024 * 1024  # 50MB — skip heavy parsers above this
 PEEK_FOLDER_CEILING = 1000             # warn + offer downgrade above this file count
-BATCH_SIZE = 200
+BATCH_SIZE = 50
 MAX_PEEK_CHARS = 500
 MAX_CONTEXT_CHARS = 500
 
