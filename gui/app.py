@@ -3,7 +3,7 @@ import sys
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QTabWidget, QMessageBox, QInputDialog,
     QLineEdit, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QDoubleSpinBox, QFormLayout, QWidget, QSizePolicy,
+    QDoubleSpinBox, QSpinBox, QFormLayout, QWidget, QSizePolicy,
 )
 from PySide6.QtCore import Qt
 
@@ -290,9 +290,19 @@ class SettingsDialog(QDialog):
         self._threshold_spin.setToolTip("Warn before starting a run that exceeds this estimated cost.")
         form.addRow("Cost warning threshold:", self._threshold_spin)
 
+        # Folder depth
+        self._depth_spin = QSpinBox()
+        self._depth_spin.setRange(1, 3)
+        self._depth_spin.setValue(config.get_folder_depth())
+        self._depth_spin.setToolTip("1 = flat (Work), 2 = standard (Work/Invoices), 3 = deep (Work/Clients/Invoices)")
+        form.addRow("Folder depth:", self._depth_spin)
+
         layout.addLayout(form)
 
-        hint = QLabel("A warning dialog will appear if the estimated cost exceeds the threshold.")
+        hint = QLabel(
+            "Cost warning fires if estimated spend exceeds threshold.\n"
+            "Folder depth: 1 = flat, 2 = standard (recommended), 3 = detailed."
+        )
         hint.setStyleSheet("color: #6B7280; font-size: 12px;")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -320,6 +330,7 @@ class SettingsDialog(QDialog):
         if key:
             config.set_api_key(key)
         config.set_cost_threshold(self._threshold_spin.value())
+        config.set_folder_depth(self._depth_spin.value())
         self.accept()
 
 

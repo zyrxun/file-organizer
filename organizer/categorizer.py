@@ -72,10 +72,10 @@ _SYSTEM_TEMPLATE = """\
 You are an expert personal archivist organising someone's files into a meaningful folder structure.
 
 <rules>
-1. Max Depth: Keep folder paths to a maximum of 2 levels deep.
+1. Max Depth: Keep folder paths to a maximum of {max_depth} level(s) deep. {depth_hint}
 2. Naming: Use Title Case. Use spaces instead of underscores.
-3. Be SPECIFIC: Prefer descriptive folders like "School/IB Math", "Work/Client Invoices", "Music/Playlists" over generic ones like "Documents" or "Media". Generic folders like "Images", "Audio", "Videos" are a last resort only when filenames give no meaningful signal.
-4. Use the actual filename content to infer purpose — a file called "ib_math_hl_paper1.pdf" belongs in something like "School/IB Math", not just "Documents/PDFs".
+3. Be SPECIFIC: Prefer descriptive folders like "School/IB Math", "Work/Client Invoices" over generic ones like "Documents" or "Media". Generic folders are a last resort only when filenames give no meaningful signal.
+4. Use the actual filename content to infer purpose — a file called "ib_math_hl_paper1.pdf" belongs in "School/IB Math", not "Documents/PDFs".
 </rules>
 
 {user_context_block}\
@@ -135,7 +135,7 @@ def categorize(
                 on_batch_complete(i, len(batches))
             continue
 
-        system = _build_system(established_folders, user_context)
+        system = _build_system(established_folders, user_context, config.get_folder_depth())
         user_msg = _build_user_prompt(batch, peek_mode)
         result, usage = _call_with_retry(client, system, user_msg)
 
@@ -196,14 +196,24 @@ def clear_cache() -> None:
             os.unlink(os.path.join(config.BATCH_CACHE_DIR, f))
 
 
-def _build_system(established_folders: set[str], user_context: str = "") -> str:
+def _build_system(established_folders: set[str], user_context: str = "", max_depth: int = 2) -> str:
     if not established_folders:
         state = "No folders exist yet. You are creating the root structure."
     else:
         bullets = "\n".join(f"- {f}" for f in sorted(established_folders))
         state = f"You have already established these folders:\n{bullets}"
     context_block = _USER_CONTEXT_BLOCK.format(user_context=user_context.strip()) if user_context.strip() else ""
-    return _SYSTEM_TEMPLATE.format(dynamic_folder_state=state, user_context_block=context_block)
+    depth_hint = (
+        "Use only top-level folders (e.g. 'School', 'Work')." if max_depth == 1
+        else "Use subject/project subfolders (e.g. 'School/IB Math', 'Work/Invoices')." if max_depth == 2
+        else "Use up to 3 levels for detailed organisation (e.g. 'School/IB/Math Papers')."
+    )
+    return _SYSTEM_TEMPLATE.format(
+        dynamic_folder_state=state,
+        user_context_block=context_block,
+        max_depth=max_depth,
+        depth_hint=depth_hint,
+    )
 
 
 def _build_user_prompt(batch: list[dict], peek_mode: bool) -> str:

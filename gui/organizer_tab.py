@@ -202,15 +202,35 @@ class OrganizerTab(QWidget):
         self._peek_cb = QCheckBox("Peek inside files (reads content, opt-in, may increase cost)")
         options_vbox.addWidget(self._peek_cb)
 
+        # Profile quick-select
+        profile_row = QHBoxLayout()
+        profile_lbl = QLabel("Profile:")
+        profile_lbl.setStyleSheet("font-weight: 600; color: #374151;")
+        self._profile_combo = QComboBox()
+        self._profile_combo.addItems([
+            "Custom (write your own below)",
+            "High School Student",
+            "University / College Student",
+            "Freelancer / Creative",
+            "Office Professional",
+            "Small Business Owner",
+            "Parent / Family",
+            "Researcher / Academic",
+        ])
+        self._profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+        profile_row.addWidget(profile_lbl)
+        profile_row.addWidget(self._profile_combo, 1)
+        options_vbox.addLayout(profile_row)
+
         # Collapsible context hint
-        self._context_box = QGroupBox("Context (optional)")
+        self._context_box = QGroupBox("Context — describe yourself so folders match your life")
         self._context_box.setCheckable(True)
-        self._context_box.setChecked(False)
+        self._context_box.setChecked(True)
         context_layout = QVBoxLayout(self._context_box)
         self._context_edit = QPlainTextEdit()
         self._context_edit.setPlaceholderText(
-            "e.g. 2020–2024 I was a university student studying engineering. "
-            "I also do freelance graphic design."
+            "e.g. I'm in Year 12 doing IB. I study Maths, Biology, Chemistry, History and English. "
+            "I also do freelance graphic design on the side."
         )
         self._context_edit.setFixedHeight(72)
         self._context_edit.textChanged.connect(self._on_context_changed)
@@ -308,6 +328,44 @@ class OrganizerTab(QWidget):
 
         self._src_path: str | None = None
         self._dst_path: str | None = None
+
+    _PROFILE_PRESETS = {
+        "High School Student": (
+            "I am a high school student. I have files related to my subjects (e.g. Maths, English, Sciences, Humanities), "
+            "homework, assignments, and exam prep. I also have personal files like photos, music, and social content."
+        ),
+        "University / College Student": (
+            "I am a university student. I have lecture notes, assignments, and readings organised by course/subject. "
+            "I also have research papers, a thesis or project, and personal files."
+        ),
+        "Freelancer / Creative": (
+            "I am a freelancer or creative professional. I have client projects, invoices, contracts, and design or "
+            "creative assets. I also have business admin files and personal files."
+        ),
+        "Office Professional": (
+            "I work in an office environment. I have work documents, meeting notes, reports, presentations, and "
+            "spreadsheets organised by project or department. I also have personal files."
+        ),
+        "Small Business Owner": (
+            "I run a small business. I have invoices, receipts, contracts, employee records, marketing materials, "
+            "and financial documents. I also have personal files mixed in."
+        ),
+        "Parent / Family": (
+            "I manage files for a family. I have school documents for kids, family photos and videos, medical records, "
+            "household bills and receipts, and personal documents for multiple family members."
+        ),
+        "Researcher / Academic": (
+            "I am a researcher or academic. I have research papers, literature notes, data files, writing drafts, "
+            "conference materials, and teaching resources organised by project or topic."
+        ),
+    }
+
+    def _on_profile_changed(self, index: int) -> None:
+        label = self._profile_combo.currentText()
+        preset = self._PROFILE_PRESETS.get(label)
+        if preset:
+            self._context_edit.setPlainText(preset)
+            self._context_box.setChecked(True)
 
     def _on_context_changed(self) -> None:
         text = self._context_edit.toPlainText()

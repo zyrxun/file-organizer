@@ -52,3 +52,17 @@ def get_cost_threshold() -> float:
 def set_cost_threshold(value: float) -> None:
     import keyring
     keyring.set_password("FileOrganizer", "cost_threshold", str(value))
+
+
+def get_folder_depth() -> int:
+    try:
+        import keyring
+        v = keyring.get_password("FileOrganizer", "folder_depth")
+        return int(v) if v else 2
+    except Exception:
+        return 2
+
+
+def set_folder_depth(value: int) -> None:
+    import keyring
+    keyring.set_password("FileOrganizer", "folder_depth", str(value))
